@@ -1,0 +1,97 @@
+---
+title: Practical Machine Learning Assignment
+author: Nick Neal
+output: html_document
+---
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.  
+
+In this project, I will build a prediction model using data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict the manner in which they did the exercise.
+
+###Data Wrangling 
+After loading necessary packages and importing csv files into data frames, I did a quick data exploration exercise. It was determined that several columns had missing values and several others were not relevant to the accelerometer data, so those columns were removed. 
+
+
+```{r, echo = FALSE, results='hide', cache = TRUE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+
+### Download the Data
+trainLoc <-'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'
+testLoc <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv'
+trainRaw <- "./data/pml-training.csv"
+testRaw  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(trainRaw)) {
+  download.file(trainLoc, destfile=trainRaw)
+}
+if (!file.exists(testRaw)) {
+  download.file(testLoc, destfile=testRaw)
+}
+  
+### Read raw data into data frame
+trainRaw <- read.csv(trainRaw)
+testRaw <- read.csv(testRaw)
+dim(trainRaw)
+dim(testRaw) 
+```
+
+```{r, cache = TRUE}
+### Remove incomplete columns and columns that are not relevant
+trainRaw <- trainRaw[, colSums(is.na(trainRaw)) == 0] 
+testRaw <- testRaw[, colSums(is.na(testRaw)) == 0] 
+
+trainRemove <- grepl("^X|timestamp|window", names(trainRaw))
+trainRaw <- trainRaw[, !trainRemove]
+trainCleaned <- trainRaw[, sapply(trainRaw, is.numeric)]
+trainCleaned$classe <- trainRaw$classe
+testRemove <- grepl("^X|timestamp|window", names(testRaw))
+testRaw <- testRaw[, !testRemove]
+testCleaned <- testRaw[, sapply(testRaw, is.numeric)]
+```
+
+###Model Training and Validation
+Now that the data is cleaned, I split the training data into a model training subset and a validation subset, so I can train our model on the model training subset and validate on the validation subset.
+```{r, cache = TRUE}
+#Create model training and validation subsets
+set.seed(456) # Set seed
+inModelSub <- createDataPartition(trainCleaned$classe, p=0.70, list=F)
+modelSub <- trainCleaned[inModelSub, ]
+validationSub <- trainCleaned[-inModelSub, ]
+
+```
+
+Now that I have subsets of the training data, I build a model on the model training subset and then use the validation subset to validate the model. I used a five-fold cross validation.
+
+```{r, cache = TRUE}
+## Data Modeling
+rfModelControl <- trainControl(method="cv", 5)
+rfModel <- train(classe ~ ., data=modelSub, method="rf", trControl=rfModelControl, ntree=250)
+rfModel
+
+validationPredict <- predict(rfModel, validationSub)
+
+```
+
+Accurancy and Out of Sample Errors are as follows:
+
+```{r, cache = TRUE}
+confusionMatrix(validationSub$classe, validationPredict)
+accuracy <- postResample(validationPredict, validationSub$classe)
+accuracy
+outOfSampleError <- 1 - as.numeric(confusionMatrix(validationSub$classe, validationPredict)$overall[1])
+outOfSampleError
+```
+
+###Appendix: Figures
+```{r, cache = TRUE}
+corrPlot <- cor(modelSub[, -length(names(modelSub))])
+corrplot(corrPlot, method="color")
+
+treeModel <- rpart(classe ~ ., data=modelSub, method="class")
+prp(treeModel) # fast plot
+```
